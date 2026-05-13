@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Strategy.Hedgehog where
+module Strategy.HedgehogCBC where
 
 import Etna.Lib
 import qualified Hedgehog as HH
@@ -10,29 +10,36 @@ import qualified Hedgehog.Range as Range
 import Impl
 import Spec
 
+-- Correct-by-construction BST generator (Hedgehog flavour). Mirrors
+-- Strategy.QuickCBC: each node samples a key in (lo, hi), then recurses
+-- with bounds tightened so the BST invariant holds by construction.
+genBSTCBCH :: Int -> Int -> Int -> HH.Gen BST
+genBSTCBCH depth lo hi
+  | depth <= 0 || lo + 1 >= hi = pure E
+  | otherwise =
+      Gen.frequency
+        [ (1, pure E)
+        , ( 3
+          , do
+              k <- Gen.int (Range.linearFrom 0 (lo + 1) (hi - 1))
+              v <- Gen.int (Range.linearFrom 0 (-1000) 1000)
+              left <- genBSTCBCH (depth - 1) lo k
+              right <- genBSTCBCH (depth - 1) k hi
+              pure (T left (Key k) (Val v) right)
+          )
+        ]
+
 class HGen a where
   hgen :: HH.Gen a
 
+instance HGen BST where
+  hgen = genBSTCBCH 5 (-1000) 1000
+
 instance HGen Key where
-  -- linearFrom 0 lo hi shrinks toward 0 (matches Quick/Falsify).
   hgen = Key <$> Gen.int (Range.linearFrom 0 (-1000) 1000)
 
 instance HGen Val where
   hgen = Val <$> Gen.int (Range.linearFrom 0 (-1000) 1000)
-
--- Unified BST generator (matches Strategy.Quick / Strategy.Falsify):
--- frequency [(1, E), (3, T ...)] with a fixed depth budget of 5.
-genBSTH :: Int -> HH.Gen BST
-genBSTH n
-  | n <= 0 = pure E
-  | otherwise =
-      Gen.frequency
-        [ (1, pure E)
-        , (3, T <$> genBSTH (n - 1) <*> hgen <*> hgen <*> genBSTH (n - 1))
-        ]
-
-instance HGen BST where
-  hgen = genBSTH 5
 
 instance (HGen a, HGen b) => HGen (a, b) where
   hgen = (,) <$> hgen <*> hgen
@@ -47,7 +54,7 @@ instance (HGen a, HGen b, HGen c, HGen d, HGen e) => HGen (a, b, c, d, e) where
   hgen = (,,,,) <$> hgen <*> hgen <*> hgen <*> hgen <*> hgen
 
 $( mkStrategies
-     [|hhRunGen hhDefaults Naive hgen|]
+     [|hhRunGen hhDefaults Correct hgen|]
      [ 'prop_InsertValid,
        'prop_DeleteValid,
        'prop_UnionValid,

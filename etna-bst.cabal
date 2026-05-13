@@ -12,13 +12,21 @@ library
   exposed-modules:
       Impl
       Spec
-      Strategy.Correct
       Strategy.Falsify
-      Strategy.FalsifyBuiltin
+      Strategy.FalsifyCBC
+      Strategy.FalsifyCBC2
+      Strategy.FalsifyCBC3
+      Strategy.FalsifyCBC4
+      Strategy.FalsifyGbE
       Strategy.Hedgehog
+      Strategy.HedgehogCBC
+      Strategy.HedgehogCBC2
+      Strategy.HedgehogGbE
       Strategy.Lean
       Strategy.LeanRev
       Strategy.Quick
+      Strategy.QuickCBC
+      Strategy.QuickGbE
       Strategy.Size
       Strategy.Small
       Strategy.SmallRev

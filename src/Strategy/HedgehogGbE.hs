@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Strategy.Hedgehog where
+module Strategy.HedgehogGbE where
 
 import Etna.Lib
 import qualified Hedgehog as HH
@@ -10,29 +10,38 @@ import qualified Hedgehog.Range as Range
 import Impl
 import Spec
 
+-- Generation-by-execution: produce a list of (Key, Val) pairs and fold
+-- the correct insert function over them. The resulting tree is always a
+-- valid BST, so we wire with `Correct` (no precondition filter).
+correctInsert :: Key -> Val -> Tree Key Val -> Tree Key Val
+correctInsert k v E = T E k v E
+correctInsert k v (T l k' v' r)
+  | k < k' = T (correctInsert k v l) k' v' r
+  | k > k' = T l k' v' (correctInsert k v r)
+  | otherwise = T l k' v r
+
+genBSTGbEH :: HH.Gen BST
+genBSTGbEH = do
+  kvs <-
+    Gen.list
+      (Range.linear 0 32)
+      ( (,)
+          <$> (Key <$> Gen.int (Range.linearFrom 0 (-1000) 1000))
+          <*> (Val <$> Gen.int (Range.linearFrom 0 (-1000) 1000))
+      )
+  pure $ foldr (uncurry correctInsert) E kvs
+
 class HGen a where
   hgen :: HH.Gen a
 
+instance HGen BST where
+  hgen = genBSTGbEH
+
 instance HGen Key where
-  -- linearFrom 0 lo hi shrinks toward 0 (matches Quick/Falsify).
   hgen = Key <$> Gen.int (Range.linearFrom 0 (-1000) 1000)
 
 instance HGen Val where
   hgen = Val <$> Gen.int (Range.linearFrom 0 (-1000) 1000)
-
--- Unified BST generator (matches Strategy.Quick / Strategy.Falsify):
--- frequency [(1, E), (3, T ...)] with a fixed depth budget of 5.
-genBSTH :: Int -> HH.Gen BST
-genBSTH n
-  | n <= 0 = pure E
-  | otherwise =
-      Gen.frequency
-        [ (1, pure E)
-        , (3, T <$> genBSTH (n - 1) <*> hgen <*> hgen <*> genBSTH (n - 1))
-        ]
-
-instance HGen BST where
-  hgen = genBSTH 5
 
 instance (HGen a, HGen b) => HGen (a, b) where
   hgen = (,) <$> hgen <*> hgen
@@ -47,7 +56,7 @@ instance (HGen a, HGen b, HGen c, HGen d, HGen e) => HGen (a, b, c, d, e) where
   hgen = (,,,,) <$> hgen <*> hgen <*> hgen <*> hgen <*> hgen
 
 $( mkStrategies
-     [|hhRunGen hhDefaults Naive hgen|]
+     [|hhRunGen hhDefaults Correct hgen|]
      [ 'prop_InsertValid,
        'prop_DeleteValid,
        'prop_UnionValid,
